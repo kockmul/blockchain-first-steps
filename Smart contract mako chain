@@ -1,0 +1,181 @@
+pragma solidity ^0.4.0;
+/*
+- jede MaLo wird durch eine Instanz des structs asset dargestellt
+- im struct "asset" werden alle relevanten Daten hinterlegt
+- einzelne Use-Cases durch Funktionen des MaLo-Contracts abgebildet und auf dem jeweiligen MaLo-struct angewendet
+*/
+contract MaLo{
+    //Gliederung des Assets als Datenstruktur-Element
+    struct asset{
+        uint40 kuendigungstermin; //kündigungstermin als fortlaufende Zahl 
+        uint40 vertragsende; //vertragsende als fortlaufende Zahl
+        address lf_id; //Blockchain-Adresse des Lieferanten
+        address vnb_id; //Blockchain-Adresse des VNB
+        address gv_id; //Blockchain-Adresse des Grundversorgers
+        string statusmeldung; //Statusmeldung der MaLo
+    }
+    
+    //Deklation aller auslösbaren Events
+    event Erstellt(uint40 _malo_id, address _vnb_id, address _gv_id); //Event für MaLo-Erstellung auf Blockchain
+    event Gewechselt(uint40 _malo_id,address _vnb_id, address _from, address _to); //Event für Lieferantenwechsel
+    event Verlaengert(uint40 _malo_id, address _lf_id); //Event für Vertragsverlängerung der MaLo
+    event Abgemeldet(uint40 _malo_id, address _vnb_id, address _lf_id); //Event für MaLo-Abmeldung
+    event Geloescht(uint40 _malo_id, address _vnb_id); //Event für Löschung der MaLo von Blockchain
+    
+    mapping (address=>bool) public is_vnb; //Jeder Blockchain-Adresse wird ein boolean zugeordnet, der angibt, ob die Adresse zu einem VNB gehört
+    
+    mapping(uint40=>asset) public all_malos; //jeder MaLo-ID wird ein asset-struct zugeordnet (alle Attribute)
+    
+    function authorize(string _key) returns (bool success){ 
+    /*Funktion zum Authorisieren eines Teilnehmers als VNB
+    Input:
+        - string _key: Passwort zum erfolgreichen autorisieren des Teilnehmers als VNB
+    
+    Output:
+        - bool success: Erfolgsrückmeldung
+    */
+        if(sha3(_key)==0x210fbb07669dbe635f3d18a96396ce1dfe078e665bf794f529fdcb3ab28064d2){ //Überprüfung, ob eingegebenes Passwort richtig 
+            is_vnb[msg.sender]=true; //Adresse wird im Mapping als true, also als VNB erklärt
+            return true; //Rückgabe einer Erfolgsmeldung
+        }
+        
+        else{
+            return false; //Eingabe falsches Passwort --> Rückgabe Misserfolgsmeldung
+        }
+    }
+
+    function create(uint40 malo_id, address _vnb_id, address _gv_id) returns (bool success){ //Erstellung einer neuen asset-struct-Instanz
+    /*Funktion zum Hinzufügen einer neuen MaLo-Instanz zur Blockchain
+    Input:
+        - uint40 malo_id: MaLo-ID, die der Blockchain hinzugefügt werden soll
+        - adress vnb_id: Blockchain-Adresse des der neuen MaLo zugehörigen VNB
+        - adress _gv_id: Blockchain-Adresse des der neuen MaLo zugehörigen Grundversorgers
+    
+    Output:
+        - bool success: Erfolgsrückmeldung
+    */
+        if (is_vnb[msg.sender]==true){ //Adresse des VNB muss in Array aller VNB-Adressen hinterlegt werden und ihre Existenz im Array hier kontrolliert werden
+            //fülle asset-attribute und füge asset zum mapping hinzu
+            //MaLo muss noch auf Mapping all_malos erstellt werden
+            asset malo=all_malos[malo_id];
+            if ((malo_id>=10000000000)&&(malo_id<=99999999999)&&malo.vnb_id==0x0){ //Überprüfung, ob Form der übergebenen MaLo korrekt (11 Ziffern) und ob MaLo noch nicht erstellt
+                malo.vnb_id=_vnb_id; //Attribut VNB-ID füllen
+                malo.gv_id=_gv_id; //Attribut Grundversorger-ID füllen
+                malo.lf_id=_gv_id; //Grundversorger ist Lieferant der MaLo
+                malo.statusmeldung="neu angelegt";
+                Erstellt(malo_id,malo.vnb_id,malo.gv_id); //Eventausgabe der MaLo-Erstellung
+                return true; //positive Rückmeldung
+            }
+            
+            else{
+                return false;
+            }
+
+        }
+        else{
+            return false; //negative Rückmeldung
+        }
+    }
+    
+    function remove(uint40 malo_id) returns (bool success){
+    /*Funktion zum Entfernen einer MaLo-Instanz von der Blockchain
+    Input:
+        - uint40 malo_id: MaLo-ID, die entfernt werden soll
+    
+    Output:
+        - bool success: Erfolgsrückmeldung
+    */
+    
+    asset malo=all_malos[malo_id];
+    
+        if (malo.vnb_id==msg.sender){ //Adresse des VNB muss in Array aller VNB-Adressen hinterlegt werden und ihre Existenz im Array hier kontrolliert werden
+            delete all_malos[malo_id];//lösche Malo-Instanz aus Mapping
+            Geloescht(malo_id,msg.sender); //Event wird ausgelöst
+            return true; //positive Rückmeldung
+        }
+        else{
+            return false; //negative Rückmeldung
+        }
+    }
+    
+    function lieferantenwechsel(uint40 malo_id, uint40 _kuendigungstermin, uint40 _vertragsende) returns (bool success){
+    /*Funktion zum Wechseln des Lieferanten der MaLo
+    Input:
+        - uint40 malo_id: MaLo-ID, die den Lieranten wechselt 
+        - uint40 _kuendigungstermin: Kündigungstermin des neuen Liefervertrages
+        - uint40 _vertragsende: Vertragsende des neuen Liefervertrages
+    
+    Output:
+        - bool success: Erfolgsrückmeldung
+    */
+        if (is_vnb[msg.sender]==true){ //Adresse des VNB muss in Array aller VNB-Adressen hinterlegt werden und ihre Existenz im Array hier kontrolliert werden
+            return false; //negative Rückmeldung --> VNB darf LF-Wechsel nicht initiieren
+        }
+        else{ //Wenn Funktion von einem nicht-VNB aufgerufen wird
+            asset malo=all_malos[malo_id]; //MaLo-struct wird aus Mapping abgerufen
+            if ((block.timestamp>=malo.kuendigungstermin)&&(malo.vnb_id!=0x0)){ //Kontrolle: Liegt Datum des Zeitpunktes, an dem Funktion aufgerufen wird nach dem Kündigungstermin? + Existiert MaLo schon auf Blockchain?
+                Gewechselt(malo_id,malo.vnb_id,malo.lf_id,msg.sender); //Eventauslösung
+                malo.lf_id=msg.sender;//setze Lieferanten auf Initiator der Funktion
+                malo.kuendigungstermin=_kuendigungstermin;//setze kuendigungstermin auf neuen Wert
+                malo.vertragsende=_vertragsende;//setze vertragsende auf neuen Wert
+                malo.statusmeldung="regelmäßige Belieferung";
+                return true; //positive Rückmeldung
+            }
+            
+            else{
+                return false;
+            }
+        }
+    }
+    
+    function lieferantenabmeldung(uint40 malo_id, uint40 _kuendigungstermin, uint40 _vertragsende) returns (bool success){
+    /*Funktion zum Abmelden der MaLo vom Lieferanten und Eintragung des Grundversorgers als neuen Lieferanten
+    Input:
+        - uint40 malo_id: MaLo-ID, die vom Lieferanten abgemeldet werden soll 
+        - uint40 _kuendigungstermin: Kündigungstermin des neuen Liefervertrages vom Grundversorger
+        - uint40 _vertragsende: Vertragsende des neuen Liefervertrages vom Grundversorger
+    
+    Output:
+        - bool success: Erfolgsrückmeldung
+    */
+        asset malo=all_malos[malo_id]; //abrufen des MaLo-struct aus Mapping aller MaLos
+        
+        if ((is_vnb[msg.sender]==true)&&(sha3(malo.statusmeldung)==sha3("Abmeldung"))&&malo.vnb_id!=0x0){ //Adresse des VNB muss in Array aller VNB-Adressen hinterlegt werden und ihre Existenz im Array hier kontrolliert werden
+            Abgemeldet(malo_id,malo.vnb_id,malo.lf_id); //Eventauslösung
+            malo.lf_id=malo.gv_id;//setze lf_id auf grundversorger
+            malo.kuendigungstermin=_kuendigungstermin;//setze kuendigungstermin auf neuen Wert
+            malo.vertragsende=_vertragsende;//setze vertragsende auf neuen Wert
+            return true; //positive Rückmeldung
+        }
+        else{
+            if (msg.sender==malo.lf_id){ //Wenn Funktion durch Altlieferanten aufgerufen
+                malo.kuendigungstermin=0;//setze kuendigungstermin auf 0
+                malo.vertragsende=0;//setze vertragsende auf 0
+                malo.statusmeldung="Abmeldung";
+            }
+            else{
+                return false;
+            }   
+        }
+    }
+    
+    function aktualisiere_vertragsdaten(uint40 malo_id, uint40 _kuendigungstermin, uint40 _vertragsende) returns (bool success){
+    /*Funktion zum Aktualisieren der Vertragsdaten der Versorgung der MaLo
+    Input:
+        - uint40 malo_id: MaLo-ID, dessen Vertragsdaten aktualisiert werden sollen 
+        - uint40 _kuendigungstermin: Aktualisierter Kündigungstermin
+        - uint40 _vertragsende: Aktualisiertes Vertragsende
+    
+    Output:
+        - bool success: Erfolgsrückmeldung
+    */
+        asset malo=all_malos[malo_id]; //abrufen des MaLo-Structs aus Mapping aller MaLos
+        
+        if ((msg.sender==malo.lf_id)&&(malo.vnb_id!=0x0)){ //Kontrolle, ob Funktion durch Lieferant der MaLo aufgerufen + ob MaLo auf Blockchain existiert
+            malo.kuendigungstermin=_kuendigungstermin;//setze kuendigungstermin auf neuen Wert
+            malo.vertragsende=_vertragsende;//setze vertragsende auf neuen Wert
+            Verlaengert(malo_id,malo.lf_id); //Eventauslösung
+            return true;
+        }
+    }
+}
